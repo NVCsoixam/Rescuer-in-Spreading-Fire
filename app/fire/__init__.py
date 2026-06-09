@@ -1,0 +1,1 @@
+# app/fire package initialization
