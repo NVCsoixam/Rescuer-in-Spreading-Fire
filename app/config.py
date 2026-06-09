@@ -9,7 +9,7 @@ from enum import Enum
 
 # Grid settings
 GRID_MIN_SIZE: int = 10
-GRID_MAX_SIZE: int = 30
+GRID_MAX_SIZE: int = 35
 GRID_DEFAULT_SIZE: int = 20
 
 # Pathfinding risk penalty weight

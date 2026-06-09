@@ -28,6 +28,21 @@ class UIState:
         self.selected_complexity: Complexity = Complexity.MEDIUM
         self.show_path: bool = True
         self.show_risk: bool = True
+        self.size_dropdown_open: bool = False
+        self.fire_interval_focused: bool = False
+        self.fire_interval_text: str = "1000"
+
+
+def _apply_fire_interval(engine: Engine, ui_state: UIState) -> None:
+    """Validate and apply typed fire interval buffer to the simulation engine."""
+    try:
+        val = float(ui_state.fire_interval_text)
+    except ValueError:
+        val = 1000.0
+    # Clamp to [0.0, 10000.0]
+    val = max(0.0, min(val, 10000.0))
+    engine.fire_interval = val
+    ui_state.fire_interval_text = str(int(val))
 
 
 def handle_events(
@@ -59,14 +74,26 @@ def handle_events(
     offset_x = (960 - (grid_w * cell_size)) / 2
     offset_y = (800 - (grid_h * cell_size)) / 2
 
-    # Map speed preset labels to values
-    speed_presets_keys = list(FIRE_SPEED_PRESETS.keys())
-
     for event in events:
         if event.type == pygame.QUIT:
             return False
 
         elif event.type == pygame.KEYDOWN:
+            if ui_state.fire_interval_focused:
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    ui_state.fire_interval_focused = False
+                    _apply_fire_interval(engine, ui_state)
+                elif event.key == pygame.K_BACKSPACE:
+                    ui_state.fire_interval_text = ui_state.fire_interval_text[:-1]
+                elif event.unicode.isdigit():
+                    new_text = ui_state.fire_interval_text + event.unicode
+                    try:
+                        if int(new_text) <= 10000:
+                            ui_state.fire_interval_text = new_text
+                    except ValueError:
+                        pass
+                continue  # Skip other key events if typing in text input
+
             if event.key == pygame.K_ESCAPE:
                 return False
 
@@ -90,6 +117,12 @@ def handle_events(
 
             # 1. Click inside Grid Area -> Edit Map
             if mx < 960:
+                if ui_state.size_dropdown_open:
+                    ui_state.size_dropdown_open = False
+                if ui_state.fire_interval_focused:
+                    ui_state.fire_interval_focused = False
+                    _apply_fire_interval(engine, ui_state)
+
                 if state.current_mode == SimulationState.READY:
                     # Translate mouse pixels to grid coordinates
                     gx = int((mx - offset_x) / cell_size)
@@ -103,59 +136,75 @@ def handle_events(
 
             # 2. Click inside Sidebar Area -> Adjust Configs
             else:
+                clicked_dropdown_option = False
+                if ui_state.size_dropdown_open:
+                    for size_opt in [10, 15, 20, 25, 30, 35]:
+                        opt_rect = sidebar.buttons.get(f"size_option_{size_opt}")
+                        if opt_rect and opt_rect.collidepoint(event.pos):
+                            ui_state.selected_size = size_opt
+                            ui_state.size_dropdown_open = False
+                            clicked_dropdown_option = True
+                            break
+
+                if ui_state.size_dropdown_open and not clicked_dropdown_option:
+                    trigger_rect = sidebar.buttons.get("size_dropdown_trigger")
+                    if not (trigger_rect and trigger_rect.collidepoint(event.pos)):
+                        ui_state.size_dropdown_open = False
+
+                # Track if input was clicked to avoid double-processing focus lose
+                clicked_input_box = False
+                input_rect = sidebar.buttons.get("fire_interval_input")
+                if input_rect and input_rect.collidepoint(event.pos):
+                    clicked_input_box = True
+
                 for name, rect in sidebar.buttons.items():
                     if rect.collidepoint(event.pos):
-                        # Fire Interval speed adjustment
-                        if name == "speed_prev":
-                            idx = speed_presets_keys.index(ui_state.selected_speed_name)
-                            ui_state.selected_speed_name = speed_presets_keys[(idx - 1) % len(speed_presets_keys)]
-                            engine.fire_interval = float(FIRE_SPEED_PRESETS[ui_state.selected_speed_name])
-                        elif name == "speed_next":
-                            idx = speed_presets_keys.index(ui_state.selected_speed_name)
-                            ui_state.selected_speed_name = speed_presets_keys[(idx + 1) % len(speed_presets_keys)]
-                            engine.fire_interval = float(FIRE_SPEED_PRESETS[ui_state.selected_speed_name])
+                        # Dropdown trigger
+                        if name == "size_dropdown_trigger":
+                            ui_state.size_dropdown_open = not ui_state.size_dropdown_open
+                            if ui_state.fire_interval_focused:
+                                ui_state.fire_interval_focused = False
+                                _apply_fire_interval(engine, ui_state)
 
-                        # Environment style selector
-                        elif name == "env_prev":
-                            envs = list(EnvironmentType)
-                            idx = envs.index(ui_state.selected_env_type)
-                            ui_state.selected_env_type = envs[(idx - 1) % len(envs)]
-                        elif name == "env_next":
-                            envs = list(EnvironmentType)
-                            idx = envs.index(ui_state.selected_env_type)
-                            ui_state.selected_env_type = envs[(idx + 1) % len(envs)]
-
-                        # Generator complexity
-                        elif name == "comp_prev":
-                            comps = list(Complexity)
-                            idx = comps.index(ui_state.selected_complexity)
-                            ui_state.selected_complexity = comps[(idx - 1) % len(comps)]
-                        elif name == "comp_next":
-                            comps = list(Complexity)
-                            idx = comps.index(ui_state.selected_complexity)
-                            ui_state.selected_complexity = comps[(idx + 1) % len(comps)]
+                        # Fire Interval Textbox focus
+                        elif name == "fire_interval_input":
+                            ui_state.fire_interval_focused = True
+                            ui_state.size_dropdown_open = False
+                            ui_state.fire_interval_text = str(int(engine.fire_interval))
 
                         # Random Map Generation trigger
                         elif name == "generate_map":
                             if state.current_mode == SimulationState.READY:
                                 seed = random.randint(1, 100000)
+                                env_type = random.choice(list(EnvironmentType))
+                                complexity = random.choice(list(Complexity))
                                 new_state = map_generator.generate(
-                                    width=30,
-                                    height=25,
-                                    env_type=ui_state.selected_env_type,
-                                    complexity=ui_state.selected_complexity,
+                                    width=ui_state.selected_size,
+                                    height=ui_state.selected_size,
+                                    env_type=env_type,
+                                    complexity=complexity,
                                     seed=seed
                                 )
-                                # Re-inject into engine and update initial snapshot
                                 engine.set_state(new_state)
+                                ui_state.size_dropdown_open = False
+                                ui_state.fire_interval_focused = False
+                                _apply_fire_interval(engine, ui_state)
 
                         # Tool Selection toggles
                         elif name.startswith("tool_"):
-                            tool_val = name.replace("tool_", "")
-                            ui_state.active_tool = EditTool(tool_val)
+                            if state.current_mode == SimulationState.READY:
+                                tool_val = name.replace("tool_", "")
+                                ui_state.active_tool = EditTool(tool_val)
+                                ui_state.size_dropdown_open = False
+                                ui_state.fire_interval_focused = False
+                                _apply_fire_interval(engine, ui_state)
 
                         # Execution Mode triggers
                         elif name.startswith("run_"):
+                            ui_state.size_dropdown_open = False
+                            ui_state.fire_interval_focused = False
+                            _apply_fire_interval(engine, ui_state)
+
                             mode_val = name.replace("run_", "")
                             run_mode = SimulationState(mode_val)
                             engine.state.selected_algorithm = run_mode.name
@@ -163,16 +212,28 @@ def handle_events(
 
                         # Pause / Resume and Reset
                         elif name == "control_pause":
+                            ui_state.size_dropdown_open = False
+                            ui_state.fire_interval_focused = False
+                            _apply_fire_interval(engine, ui_state)
+
                             if state.current_mode == SimulationState.PAUSED:
                                 engine.resume()
                             else:
                                 engine.pause()
                         elif name == "control_reset":
+                            ui_state.size_dropdown_open = False
+                            ui_state.fire_interval_focused = False
+                            _apply_fire_interval(engine, ui_state)
+
                             engine.reset()
+
+                # If focused and clicked outside the input box, commit the value and unfocus
+                if ui_state.fire_interval_focused and not clicked_input_box:
+                    ui_state.fire_interval_focused = False
+                    _apply_fire_interval(engine, ui_state)
 
         # Handle mouse drags for quick wall carving and erasing
         elif event.type == pygame.MOUSEMOTION:
-            # Only allow edits in READY mode
             if state.current_mode == SimulationState.READY:
                 mx, my = event.pos
                 if mx < 960:

@@ -81,6 +81,10 @@ class Engine:
         Returns:
             bool: True if started successfully, False otherwise.
         """
+        # If not in READY, reset to the original snapshot first
+        if self.state.current_mode != SimulationState.READY:
+            self.reset()
+
         # Snapshot the current state before we begin mutating it
         self.snapshot = create_snapshot(self.state)
         self.state.current_mode = mode

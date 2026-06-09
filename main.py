@@ -34,8 +34,8 @@ def main() -> None:
     # 2. Generate initial layout map (HOSPITAL, MEDIUM complexity by default)
     # Start with seed=42 for deterministic first-launch layout
     initial_state = map_generator.generate(
-        width=30,
-        height=25,
+        width=20,
+        height=20,
         env_type=ui_state.selected_env_type,
         complexity=ui_state.selected_complexity,
         seed=42
@@ -46,8 +46,8 @@ def main() -> None:
     grid_renderer = GridRenderer(config.GRID_AREA_WIDTH, config.WINDOW_HEIGHT)
     sidebar = Sidebar(config.GRID_AREA_WIDTH, config.SIDEBAR_WIDTH, config.WINDOW_HEIGHT)
 
-    # Setup initial fire interval matching preset
-    engine.fire_interval = float(config.FIRE_SPEED_PRESETS[ui_state.selected_speed_name])
+    # Setup initial fire interval
+    engine.fire_interval = float(config.FIRE_INTERVAL_DEFAULT)
 
     running = True
     print("AI Rescue & Fire Simulation System UI Loop Started.")
@@ -82,10 +82,7 @@ def main() -> None:
         sidebar.draw(
             screen,
             engine.state,
-            ui_state.active_tool,
-            ui_state.selected_speed_name,
-            ui_state.selected_env_type,
-            ui_state.selected_complexity
+            ui_state
         )
 
         # Flip Pygame buffers to update screen pixels
