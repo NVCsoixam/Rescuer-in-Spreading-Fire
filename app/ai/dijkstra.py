@@ -3,8 +3,10 @@ app/ai/dijkstra.py
 
 Dijkstra's pathfinding algorithm.
 Finds the shortest weighted path on the grid taking cell risk weights into account.
+Equivalent to UCS but without heuristic optimization.
 """
 
+from __future__ import annotations
 import heapq
 import time
 from app.config import RISK_WEIGHT
@@ -17,7 +19,7 @@ def find_path(
     grid: Grid,
     start: Position,
     goal: Position,
-    heatmap: list[list[float]] = None
+    heatmap: list[list[float]] | None = None,
 ) -> PathResult:
     """
     Search for a path from start to goal using Dijkstra's algorithm.
@@ -35,16 +37,16 @@ def find_path(
     start_time = time.perf_counter()
     expanded_nodes = 0
 
-    # Quick check for invalid inputs
+    # Quick bounds check
     if not grid.in_bounds(start.x, start.y) or not grid.in_bounds(goal.x, goal.y):
-        execution_time = (time.perf_counter() - start_time) * 1000.0
-        return PathResult(found=False, path=[], cost=0.0, expanded_nodes=0, execution_time_ms=execution_time)
+        elapsed = (time.perf_counter() - start_time) * 1000.0
+        return PathResult(found=False, path=[], cost=0.0, expanded_nodes=0, execution_time_ms=elapsed)
 
     if start == goal:
-        execution_time = (time.perf_counter() - start_time) * 1000.0
-        return PathResult(found=True, path=[], cost=0.0, expanded_nodes=0, execution_time_ms=execution_time)
+        elapsed = (time.perf_counter() - start_time) * 1000.0
+        return PathResult(found=True, path=[], cost=0.0, expanded_nodes=0, execution_time_ms=elapsed)
 
-    # Priority queue stores (cost, counter, PathNode)
+    # Priority queue: (cost, counter, PathNode)
     heap: list[tuple[float, int, PathNode]] = []
     counter = 0
 
@@ -52,46 +54,49 @@ def find_path(
     heapq.heappush(heap, (0.0, counter, start_node))
     counter += 1
 
-    # Keep track of minimum costs
-    min_cost: dict[tuple[int, int], float] = { (start.x, start.y): 0.0 }
+    # Track minimum cost to each node
+    min_cost: dict[tuple[int, int], float] = {(start.x, start.y): 0.0}
     visited: set[tuple[int, int]] = set()
 
     found = False
-    goal_node = None
+    goal_node: PathNode | None = None
 
     while heap:
         curr_cost, _, curr_node = heapq.heappop(heap)
         curr_pos = curr_node.position
+        pos_key = (curr_pos.x, curr_pos.y)
 
         if curr_pos == goal:
             found = True
             goal_node = curr_node
             break
 
-        if (curr_pos.x, curr_pos.y) in visited:
+        if pos_key in visited:
             continue
-        visited.add((curr_pos.x, curr_pos.y))
+        visited.add(pos_key)
         expanded_nodes += 1
 
-        # Expand neighbors (UP, RIGHT, DOWN, LEFT)
-        neighbors = grid.get_neighbors(curr_pos.x, curr_pos.y)
-        for n in neighbors:
-            if grid.is_walkable(n.x, n.y):
-                risk = 0.0
-                if heatmap is not None and len(heatmap) > n.y and len(heatmap[0]) > n.x:
-                    risk = heatmap[n.y][n.x]
+        # Expand neighbors
+        for n in grid.get_neighbors(curr_pos.x, curr_pos.y):
+            if not grid.is_walkable(n.x, n.y):
+                continue
 
-                # Step cost: 1.0 + risk * weight
-                step_cost = 1.0 + risk * RISK_WEIGHT
-                next_cost = curr_cost + step_cost
+            n_key = (n.x, n.y)
+            # Calculate risk-weighted step cost
+            risk = 0.0
+            if heatmap is not None and 0 <= n.y < len(heatmap) and 0 <= n.x < len(heatmap[0]):
+                risk = heatmap[n.y][n.x]
 
-                if (n.x, n.y) not in min_cost or next_cost < min_cost[(n.x, n.y)]:
-                    min_cost[(n.x, n.y)] = next_cost
-                    next_node = PathNode(position=n, cost=next_cost, parent=curr_node)
-                    heapq.heappush(heap, (next_cost, counter, next_node))
-                    counter += 1
+            step_cost = 1.0 + risk * RISK_WEIGHT
+            next_cost = curr_cost + step_cost
 
-    execution_time = (time.perf_counter() - start_time) * 1000.0
+            if n_key not in min_cost or next_cost < min_cost[n_key]:
+                min_cost[n_key] = next_cost
+                next_node = PathNode(position=n, cost=next_cost, parent=curr_node)
+                heapq.heappush(heap, (next_cost, counter, next_node))
+                counter += 1
+
+    elapsed = (time.perf_counter() - start_time) * 1000.0
 
     if found and goal_node is not None:
         path = reconstruct_path(goal_node)
@@ -100,7 +105,7 @@ def find_path(
             path=path,
             cost=goal_node.cost,
             expanded_nodes=expanded_nodes,
-            execution_time_ms=execution_time
+            execution_time_ms=elapsed,
         )
 
     return PathResult(
@@ -108,5 +113,5 @@ def find_path(
         path=[],
         cost=0.0,
         expanded_nodes=expanded_nodes,
-        execution_time_ms=execution_time
+        execution_time_ms=elapsed,
     )

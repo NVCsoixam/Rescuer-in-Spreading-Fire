@@ -31,13 +31,11 @@ def main() -> None:
     ui_state = UIState()
     map_generator = MapGenerator()
 
-    # 2. Generate initial layout map (HOSPITAL, MEDIUM complexity by default)
+    # 2. Generate initial layout map
     # Start with seed=42 for deterministic first-launch layout
     initial_state = map_generator.generate(
         width=20,
         height=20,
-        env_type=ui_state.selected_env_type,
-        complexity=ui_state.selected_complexity,
         seed=42
     )
 
@@ -69,13 +67,11 @@ def main() -> None:
         # Clear background with a sleek theme color
         screen.fill((20, 20, 25))
 
-        # Draw Grid, risk heatmap overlays, and pathfinding routes
+        # Draw Grid, pathfinding routes, and entities
         grid_renderer.draw(
             screen,
             engine.state,
             engine.planned_path,
-            show_path=ui_state.show_path,
-            show_risk=ui_state.show_risk
         )
 
         # Draw control panels, sliders, and statistics

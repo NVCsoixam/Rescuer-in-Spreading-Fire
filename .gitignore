@@ -37,6 +37,10 @@ env/
 *.swp
 *.swo
 
+# Logs
+logs/
+prebuilt-x64/
+
 # Testing cache
 .pytest_cache/
 .coverage

@@ -4,7 +4,7 @@ tests/test_generator.py
 Unit tests for the MapGenerator.
 """
 
-from app.config import CellType, EnvironmentType, Complexity
+from app.config import CellType
 from app.core.state import Position
 from app.map.generator import MapGenerator
 
@@ -16,16 +16,12 @@ def test_map_generator_determinism() -> None:
     # Generate map 1
     state1 = generator.generate(
         width=20, height=20,
-        env_type=EnvironmentType.HOSPITAL,
-        complexity=Complexity.MEDIUM,
         seed=42
     )
 
     # Generate map 2 with same seed
     state2 = generator.generate(
         width=20, height=20,
-        env_type=EnvironmentType.HOSPITAL,
-        complexity=Complexity.MEDIUM,
         seed=42
     )
 
@@ -53,15 +49,11 @@ def test_map_generator_different_seeds() -> None:
 
     state1 = generator.generate(
         width=20, height=20,
-        env_type=EnvironmentType.HOSPITAL,
-        complexity=Complexity.MEDIUM,
         seed=42
     )
 
     state2 = generator.generate(
         width=20, height=20,
-        env_type=EnvironmentType.HOSPITAL,
-        complexity=Complexity.MEDIUM,
         seed=100
     )
 
@@ -86,8 +78,6 @@ def test_connectivity_check() -> None:
     generator = MapGenerator()
     state = generator.generate(
         width=15, height=15,
-        env_type=EnvironmentType.OFFICE,
-        complexity=Complexity.LOW,
         seed=1337
     )
 

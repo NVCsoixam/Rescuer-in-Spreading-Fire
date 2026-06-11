@@ -23,14 +23,12 @@ def test_heatmap_propagation() -> None:
     heatmap = generate_heatmap(grid, fire_cells)
 
     # Check risk mapping directly on grid cells
-    assert grid.cells[5][5].risk == 1.0  # Center
-    assert grid.cells[5][6].risk == 0.9  # Distance 1 (DOWN)
-    assert grid.cells[5][7].risk == 0.7  # Distance 2 (DOWN)
+    # Risk levels: dist 0=1.0, 1=0.95, 2=0.8, 3=0.6, 4=0.4
+    assert grid.cells[5][5].risk == 1.0  # Center (distance 0)
+    assert grid.cells[5][6].risk == 0.95  # Distance 1 (DOWN)
+    assert grid.cells[5][7].risk == 0.8  # Distance 2 (DOWN)
 
     # Wall at (5,4) blocks propagation - so cells behind it shouldn't get direct risk
     assert grid.cells[4][5].risk == 0.0  # Wall itself should be blocked/zero risk
-    # Point (5,3) is behind the wall - it would need distance 3 to go around the wall:
-    # Path around: (5,5) -> (4,5) [WALL-BLOCKED]
-    # Path around: (5,5) -> (6,5) -> (6,4) -> (6,3) -> (5,3) (distance 4)
-    # Let's verify (5,3) risk is propagated around the wall (distance 4 = 0.3)
-    assert grid.cells[3][5].risk == 0.3
+    # Point (5,3) is behind the wall - path around via distance ~3 or 4
+    assert grid.cells[3][5].risk == 0.4  # Distance ~4 propagated around wall

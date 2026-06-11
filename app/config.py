@@ -43,6 +43,7 @@ class CellType(Enum):
     VICTIM = 3
     ROBOT = 4
     RESCUE = 5
+    EXIT_WALL = 6  # Wall bricks at rescue exit points
 
 
 class SimulationState(Enum):
@@ -86,22 +87,6 @@ class VictimState(Enum):
     DEAD = 3
 
 
-class EnvironmentType(Enum):
-    """Available environment generation styles for procedural building layout."""
-    APARTMENT = "APARTMENT"
-    OFFICE = "OFFICE"
-    HOSPITAL = "HOSPITAL"
-    WAREHOUSE = "WAREHOUSE"
-    MIXED = "MIXED"
-
-
-class Complexity(Enum):
-    """Density and branching factor settings for procedural generator."""
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-
-
 # Movement vectors (dx, dy)
 UP: tuple[int, int] = (0, -1)
 DOWN: tuple[int, int] = (0, 1)
@@ -110,12 +95,3 @@ RIGHT: tuple[int, int] = (1, 0)
 
 # Fixed direction list for deterministic neighbor ordering (UP, RIGHT, DOWN, LEFT)
 DIRECTIONS: list[tuple[int, int]] = [UP, RIGHT, DOWN, LEFT]
-
-# Fire speed presets UI to Millisecond mapping
-FIRE_SPEED_PRESETS: dict[str, int] = {
-    "Very Fast": 500,
-    "Fast": 750,
-    "Normal": 1000,
-    "Slow": 1500,
-    "Very Slow": 3000
-}

@@ -2,24 +2,24 @@
 app/map/generator.py
 
 Procedural building map generator for the 2D Rescue Simulation System.
-Generates connected rooms and corridors based on environment type, complexity, and seed.
+Generates open, connected layouts with rescue stations at map corners as exits.
 """
 
+from __future__ import annotations
 import random
 from app.config import (
     CellType, SimulationState, RobotState, VictimState,
-    EnvironmentType, Complexity, DEFAULT_VICTIM_COUNT,
-    DEFAULT_RESCUE_COUNT, DEFAULT_FIRE_SOURCE_COUNT
+    DEFAULT_VICTIM_COUNT, DEFAULT_RESCUE_COUNT, DEFAULT_FIRE_SOURCE_COUNT,
 )
 from app.core.state import (
     Position, Cell, Robot, Victim, RescueStation, FireCell,
-    SimulationStats, GameState
+    SimulationStats, GameState,
 )
 from app.map.grid import Grid
 
 
 class MapGenerator:
-    """Generates building-like layouts for simulations with connectivity validation."""
+    """Generates open, connected map layouts with rescue exits at corners."""
 
     def __init__(self) -> None:
         """Initialize the map generator."""
@@ -29,12 +29,10 @@ class MapGenerator:
         self,
         width: int,
         height: int,
-        env_type: EnvironmentType = EnvironmentType.HOSPITAL,
-        complexity: Complexity = Complexity.MEDIUM,
         seed: int | None = None,
         num_victims: int = DEFAULT_VICTIM_COUNT,
         num_rescue_stations: int = DEFAULT_RESCUE_COUNT,
-        num_fire_sources: int = DEFAULT_FIRE_SOURCE_COUNT
+        num_fire_sources: int = DEFAULT_FIRE_SOURCE_COUNT,
     ) -> GameState:
         """
         Generate a playable connected GameState based on parameters.
@@ -42,132 +40,55 @@ class MapGenerator:
         Args:
             width: Width of the grid.
             height: Height of the grid.
-            env_type: Type of the building environment (e.g. HOSPITAL, OFFICE).
-            complexity: Density and number of rooms (LOW, MEDIUM, HIGH).
-            seed: Seed for the random generator to ensure reproducibility.
+            seed: Seed for reproducibility.
             num_victims: Number of victims to generate.
-            num_rescue_stations: Number of rescue stations to place.
-            num_fire_sources: Number of initial fire cells to ignite.
+            num_rescue_stations: Number of rescue stations.
+            num_fire_sources: Number of initial fire cells.
 
         Returns:
             GameState: The generated and validated game state.
+
+        Raises:
+            RuntimeError: If generation fails after max attempts.
         """
-        # Limit retries to prevent infinite loops if settings are too tight
-        for attempt in range(20):
-            # Create a separate random engine for this generation seed
+        max_attempts = 30
+        for attempt in range(max_attempts):
             rng = random.Random(seed + attempt if seed is not None else None)
             grid = Grid(width, height)
 
-            # 1. Fill grid with walls initially
-            for y in range(height):
-                for x in range(width):
-                    grid.cells[y][x].cell_type = CellType.WALL
+            # 1. Fill grid with walls
+            grid.fill_all(CellType.WALL)
 
-            # 2. Determine room parameters based on environment and complexity
-            room_params = self._get_room_params(width, height, env_type, complexity, rng)
-            min_w, max_w, min_h, max_h, target_rooms = room_params
+            # 2. Generate sparse room layout (more open space)
+            rooms = self._place_sparse_rooms(grid, width, height, rng)
 
-            # Try to place rooms
-            rooms: list[tuple[int, int, int, int]] = []  # List of (x, y, w, h)
-            for _ in range(200):  # Maximum attempts to place rooms
-                if len(rooms) >= target_rooms:
-                    break
-                rw = rng.randint(min_w, max_w)
-                rh = rng.randint(min_h, max_h)
-                rx = rng.randint(1, width - rw - 1)
-                ry = rng.randint(1, height - rh - 1)
+            # 3. Carve open corridors to connect rooms (wide paths)
+            self._carve_main_corridors(grid, rooms, width, height, rng)
 
-                # Check overlap with 1-cell buffer padding
-                overlap = False
-                for ox, oy, ow, oh in rooms:
-                    if not (rx + rw + 1 < ox or rx > ox + ow + 1 or
-                            ry + rh + 1 < oy or ry > oy + oh + 1):
-                        overlap = True
-                        break
+            # 4. Collect available empty positions
+            empty_cells = self._collect_cells(grid)
 
-                if not overlap:
-                    rooms.append((rx, ry, rw, rh))
-                    # Carve room cells as EMPTY
-                    for y in range(ry, ry + rh):
-                        for x in range(rx, rx + rw):
-                            grid.set_cell(x, y, CellType.EMPTY)
+            if len(empty_cells) < 10:
+                continue
 
-            # Fallback if no rooms were placed
-            if not rooms:
-                # Place at least one room in the middle
-                rw, rh = 4, 4
-                rx, ry = (width - rw) // 2, (height - rh) // 2
-                rooms.append((rx, ry, rw, rh))
-                for y in range(ry, ry + rh):
-                    for x in range(rx, rx + rw):
-                        grid.set_cell(x, y, CellType.EMPTY)
+            # 5. Place rescue stations at CORNERS (exit points)
+            try:
+                rescue_stations, rescue_positions = self._place_rescue_at_corners(
+                    grid, width, height, num_rescue_stations, rng
+                )
+                robot_pos, robot = self._place_robot(
+                    grid, rescue_positions, empty_cells, rng
+                )
+                victims = self._place_victims(
+                    grid, num_victims, empty_cells, rng
+                )
+                fire_cells = self._place_fire_sources(
+                    grid, num_fire_sources, empty_cells, rng
+                )
+            except (ValueError, IndexError):
+                continue
 
-            # 3. Generate corridors to connect rooms
-            self._connect_rooms_with_corridors(rooms, grid, rng)
-
-            # 4. Place entities
-            # We need to collect available empty cells
-            empty_cells = []
-            room_cells = []
-            for y in range(height):
-                for x in range(width):
-                    if grid.cells[y][x].cell_type == CellType.EMPTY:
-                        empty_cells.append(Position(x, y))
-                        # Check if inside any room
-                        for rx, ry, rw, rh in rooms:
-                            if rx <= x < rx + rw and ry <= y < ry + rh:
-                                room_cells.append(Position(x, y))
-                                break
-
-            # Place Rescue Stations (prioritize edge or border cells)
-            rescue_stations: list[RescueStation] = []
-            rescue_positions = self._place_rescue_stations(
-                grid, num_rescue_stations, empty_cells, rng
-            )
-            for i, pos in enumerate(rescue_positions):
-                grid.set_cell(pos.x, pos.y, CellType.RESCUE)
-                rescue_stations.append(RescueStation(station_id=i + 1, position=pos))
-                if pos in empty_cells:
-                    empty_cells.remove(pos)
-                if pos in room_cells:
-                    room_cells.remove(pos)
-
-            # Place Robot (prioritize positions near rescue stations)
-            robot_pos = self._place_robot(rescue_positions, empty_cells, rng)
-            grid.set_cell(robot_pos.x, robot_pos.y, CellType.ROBOT)
-            robot = Robot(position=robot_pos, state=RobotState.IDLE)
-            if robot_pos in empty_cells:
-                empty_cells.remove(robot_pos)
-            if robot_pos in room_cells:
-                room_cells.remove(robot_pos)
-
-            # Place Victims (prioritize inside rooms)
-            victims: list[Victim] = []
-            victim_positions = self._select_positions(
-                num_victims, room_cells, empty_cells, rng
-            )
-            for i, pos in enumerate(victim_positions):
-                grid.set_cell(pos.x, pos.y, CellType.VICTIM)
-                victims.append(Victim(victim_id=i + 1, position=pos, state=VictimState.WAITING))
-                if pos in empty_cells:
-                    empty_cells.remove(pos)
-                if pos in room_cells:
-                    room_cells.remove(pos)
-
-            # Place Fire Sources (prioritize inside rooms)
-            fire_cells: list[FireCell] = []
-            fire_positions = self._select_positions(
-                num_fire_sources, room_cells, empty_cells, rng
-            )
-            for pos in fire_positions:
-                grid.set_cell(pos.x, pos.y, CellType.FIRE)
-                fire_cells.append(FireCell(position=pos, ignition_step=0))
-                if pos in empty_cells:
-                    empty_cells.remove(pos)
-                if pos in room_cells:
-                    room_cells.remove(pos)
-
-            # 5. Connectivity validation using BFS
+            # 6. Validate connectivity
             if self._validate_connectivity(grid, robot_pos, victims, rescue_stations):
                 stats = SimulationStats()
                 return GameState(
@@ -178,191 +99,284 @@ class MapGenerator:
                     fire_cells=fire_cells,
                     stats=stats,
                     current_mode=SimulationState.READY,
-                    selected_algorithm="ASTAR"
+                    selected_algorithm="ASTAR",
                 )
 
-        raise RuntimeError("Failed to generate a fully connected map after 20 attempts.")
+        raise RuntimeError(f"Failed to generate connected map after {max_attempts} attempts.")
 
-    def _get_room_params(
-        self, width: int, height: int, env_type: EnvironmentType,
-        complexity: Complexity, rng: random.Random
-    ) -> tuple[int, int, int, int, int]:
-        """Get room min/max size parameters and target room count."""
-        # Baseline limits (increased to reduce wall density)
-        min_size, max_size = 4, 10
-        if env_type == EnvironmentType.APARTMENT:
-            min_size, max_size = 4, 6
-            base_count = 10
-        elif env_type == EnvironmentType.OFFICE:
-            min_size, max_size = 6, 10
-            base_count = 6
-        elif env_type == EnvironmentType.HOSPITAL:
-            min_size, max_size = 4, 6
-            base_count = 12
-        elif env_type == EnvironmentType.WAREHOUSE:
-            min_size, max_size = 8, 12
-            base_count = 4
-        else:  # Mixed
-            min_size, max_size = 4, 10
-            base_count = 8
+    # ── Open Layout Generation ─────────────────────────────────────
 
-        # Scale room count based on complexity
-        if complexity == Complexity.LOW:
-            target_rooms = max(2, int(base_count * 0.6))
-        elif complexity == Complexity.HIGH:
-            target_rooms = int(base_count * 1.4)
-        else:
-            target_rooms = base_count
+    def _place_sparse_rooms(
+        self, grid: Grid, width: int, height: int,
+        rng: random.Random,
+    ) -> list[tuple[int, int, int, int]]:
+        """Place rooms with compact spacing for better connectivity."""
+        rooms: list[tuple[int, int, int, int]] = []
 
-        # Adjust dimensions for small grid size limits
-        max_w = min(max_size, width // 2)
-        min_w = min(min_size, max_w)
-        max_h = min(max_size, height // 2)
-        min_h = min(min_size, max_h)
+        # Target: 3-5 rooms depending on grid size
+        max_rooms = max(3, min(5, (width * height) // 100))
+        num_rooms = rng.randint(3, max_rooms)
 
-        # Scale target rooms to not saturate small grids
-        max_allowed_rooms = max(2, (width * height) // 35)
-        target_rooms = min(target_rooms, max_allowed_rooms)
+        max_attempts = 200
+        for _ in range(max_attempts):
+            if len(rooms) >= num_rooms:
+                break
 
-        return min_w, max_w, min_h, max_h, target_rooms
+            # Rooms are modest size (20-40% of grid dimension)
+            rw = rng.randint(max(3, width // 6), max(5, width // 4))
+            rh = rng.randint(max(3, height // 6), max(5, height // 4))
+            # Place with 1 cell border from edge
+            rx = rng.randint(1, width - rw - 1)
+            ry = rng.randint(1, height - rh - 1)
 
-    def _connect_rooms_with_corridors(
-        self, rooms: list[tuple[int, int, int, int]], grid: Grid, rng: random.Random
+            # Check overlap with 1-cell buffer
+            overlap = any(
+                not (rx + rw + 1 < ox or rx > ox + ow + 1 or
+                     ry + rh + 1 < oy or ry > oy + oh + 1)
+                for ox, oy, ow, oh in rooms
+            )
+            if not overlap:
+                rooms.append((rx, ry, rw, rh))
+                for y in range(ry, ry + rh):
+                    for x in range(rx, rx + rw):
+                        grid.set_cell(x, y, CellType.EMPTY)
+
+        # Fallback: single big room at center
+        if not rooms:
+            rw, rh = width // 2, height // 2
+            rx, ry = (width - rw) // 2, (height - rh) // 2
+            rooms.append((rx, ry, rw, rh))
+            for y in range(ry, ry + rh):
+                for x in range(rx, rx + rw):
+                    grid.set_cell(x, y, CellType.EMPTY)
+
+        return rooms
+
+    def _carve_main_corridors(
+        self, grid: Grid,
+        rooms: list[tuple[int, int, int, int]],
+        width: int, height: int,
+        rng: random.Random,
     ) -> None:
-        """Create connecting corridors between rooms to ensure grid graph connectivity."""
-        # Calculate centers
-        centers = []
-        for rx, ry, rw, rh in rooms:
-            cx = rx + rw // 2
-            cy = ry + rh // 2
-            centers.append((cx, cy))
+        """Carve wide corridors connecting rooms + main axes for openness."""
+        if len(rooms) < 2:
+            return
 
-        # Sort rooms by X coordinate to connect neighbors logically
-        centers.sort(key=lambda c: c[0])
+        # Connect room centers
+        centers = [(rx + rw // 2, ry + rh // 2) for rx, ry, rw, rh in rooms]
+        rng.shuffle(centers)
 
         for i in range(len(centers) - 1):
             cx1, cy1 = centers[i]
             cx2, cy2 = centers[i + 1]
 
-            # Connect with horizontal first, then vertical
-            # (or randomly choose order)
+            # Wide L-corridors (2 cells wide for openness)
             if rng.choice([True, False]):
-                # Horiz then Vert
-                self._carve_h_corridor(grid, cx1, cx2, cy1)
-                self._carve_v_corridor(grid, cy1, cy2, cx2)
+                self._carve_h_wide(grid, cx1, cx2, cy1)
+                self._carve_v_wide(grid, cy1, cy2, cx2)
             else:
-                # Vert then Horiz
-                self._carve_v_corridor(grid, cy1, cy2, cx1)
-                self._carve_h_corridor(grid, cx1, cx2, cy2)
+                self._carve_v_wide(grid, cy1, cy2, cx1)
+                self._carve_h_wide(grid, cx1, cx2, cy2)
 
-    def _carve_h_corridor(self, grid: Grid, x1: int, x2: int, y: int) -> None:
-        """Carve horizontal path clearing WALL types to EMPTY."""
-        start_x, end_x = min(x1, x2), max(x1, x2)
-        for x in range(start_x, end_x + 1):
-            if grid.in_bounds(x, y):
-                # Don't overwrite existing doors/structures unless necessary
-                grid.set_cell(x, y, CellType.EMPTY)
+        # Add 1-3 extra connections for better flow
+        extra = min(3, len(centers) - 1)
+        for _ in range(extra):
+            a, b = rng.sample(centers, 2)
+            if a == b:
+                continue
+            if rng.choice([True, False]):
+                self._carve_h_wide(grid, a[0], b[0], a[1])
+                self._carve_v_wide(grid, a[1], b[1], b[0])
+            else:
+                self._carve_v_wide(grid, a[1], b[1], a[0])
+                self._carve_h_wide(grid, a[0], b[0], b[1])
 
-    def _carve_v_corridor(self, grid: Grid, y1: int, y2: int, x: int) -> None:
-        """Carve vertical path clearing WALL types to EMPTY."""
-        start_y, end_y = min(y1, y2), max(y1, y2)
-        for y in range(start_y, end_y + 1):
-            if grid.in_bounds(x, y):
-                grid.set_cell(x, y, CellType.EMPTY)
+        # Carve a central horizontal and vertical pathway for openness
+        mid_x = width // 2
+        mid_y = height // 2
+        for y in range(1, height - 1):
+            for dx in range(-1, 2):
+                nx = mid_x + dx
+                if 0 < nx < width - 1 and grid.cells[y][nx].cell_type == CellType.WALL:
+                    grid.set_cell(nx, y, CellType.EMPTY)
+        for x in range(1, width - 1):
+            for dy in range(-1, 2):
+                ny = mid_y + dy
+                if 0 < ny < height - 1 and grid.cells[ny][x].cell_type == CellType.WALL:
+                    grid.set_cell(x, ny, CellType.EMPTY)
 
-    def _place_rescue_stations(
-        self, grid: Grid, num_stations: int, empty_cells: list[Position], rng: random.Random
-    ) -> list[Position]:
-        """Prioritize placing rescue stations near grid borders."""
-        border_cells = []
-        for pos in empty_cells:
-            # Check if cell is within 2 cells of the border
-            if pos.x <= 1 or pos.x >= grid.width - 2 or pos.y <= 1 or pos.y >= grid.height - 2:
-                border_cells.append(pos)
+        # Carve paths from first room center to all 4 map corners
+        # to ensure rescue stations placed at corners are reachable
+        if centers:
+            cx, cy = centers[0]
+            # Top-left corner
+            self._carve_h_wide(grid, 1, cx, cy)
+            self._carve_v_wide(grid, 1, cy, 1)
+            # Top-right corner  
+            self._carve_h_wide(grid, cx, width - 2, cy)
+            self._carve_v_wide(grid, 1, cy, width - 2)
+            # Bottom-left corner
+            self._carve_h_wide(grid, 1, cx, cy)
+            self._carve_v_wide(grid, cy, height - 2, 1)
+            # Bottom-right corner
+            self._carve_h_wide(grid, cx, width - 2, cy)
+            self._carve_v_wide(grid, cy, height - 2, width - 2)
 
-        # Fallback if no border cell is empty
-        source_list = border_cells if len(border_cells) >= num_stations else empty_cells
+    @staticmethod
+    def _carve_h_wide(grid: Grid, x1: int, x2: int, y: int) -> None:
+        """Carve horizontal corridor 2 cells tall."""
+        for x in range(min(x1, x2), max(x1, x2) + 1):
+            for dy in range(-1, 2):
+                ny = y + dy
+                if grid.in_bounds(x, ny):
+                    grid.set_cell(x, ny, CellType.EMPTY)
 
-        if len(source_list) < num_stations:
-            # Not enough empty cells; use whatever is available
-            return source_list[:]
+    @staticmethod
+    def _carve_v_wide(grid: Grid, y1: int, y2: int, x: int) -> None:
+        """Carve vertical corridor 2 cells wide."""
+        for y in range(min(y1, y2), max(y1, y2) + 1):
+            for dx in range(-1, 2):
+                nx = x + dx
+                if grid.in_bounds(nx, y):
+                    grid.set_cell(nx, y, CellType.EMPTY)
 
-        return rng.sample(source_list, num_stations)
+    # ── Rescue at Corners (Exit Points) ────────────────────────────
+
+    def _place_rescue_at_corners(
+        self, grid: Grid, width: int, height: int,
+        count: int, rng: random.Random,
+    ) -> tuple[list[RescueStation], list[Position]]:
+        """
+        Place rescue stations at map corners.
+        Creates an opening in the border wall and marks surrounding
+        wall bricks as EXIT_WALL (a different brick style).
+        """
+        # Corner positions (inner cells, 1 cell from edge)
+        corner_positions = [
+            Position(1, 1),                          # Top-left
+            Position(width - 2, 1),                  # Top-right
+            Position(1, height - 2),                 # Bottom-left
+            Position(width - 2, height - 2),         # Bottom-right
+        ]
+
+        # Shuffle and pick count
+        rng.shuffle(corner_positions)
+        selected = corner_positions[:min(count, len(corner_positions))]
+
+        stations: list[RescueStation] = []
+        for i, pos in enumerate(selected):
+            # Clear the rescue station cell
+            grid.set_cell(pos.x, pos.y, CellType.RESCUE)
+
+            # Mark border wall bricks around this corner as EXIT_WALL
+            # (different brick appearance to show exit)
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)]:
+                nx, ny = pos.x + dx, pos.y + dy
+                if grid.in_bounds(nx, ny):
+                    cell = grid.cells[ny][nx]
+                    if cell.cell_type == CellType.WALL:
+                        cell.cell_type = CellType.EXIT_WALL
+
+            # Also carve a path from rescue station inward if blocked
+            # Check if station is surrounded by walls and clear a path
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = pos.x + dx, pos.y + dy
+                if (grid.in_bounds(nx, ny) and
+                        grid.cells[ny][nx].cell_type == CellType.WALL and
+                        1 <= nx < width - 1 and 1 <= ny < height - 1):
+                    # Only carve if it helps connectivity (not on the outer edge)
+                    if not ((nx == 0 or nx == width - 1) or (ny == 0 or ny == height - 1)):
+                        grid.set_cell(nx, ny, CellType.EMPTY)
+
+            stations.append(RescueStation(station_id=i + 1, position=pos))
+
+        return stations, selected
 
     def _place_robot(
-        self, rescue_positions: list[Position], empty_cells: list[Position], rng: random.Random
-    ) -> Position:
-        """Prioritize placing the robot near a rescue station."""
-        if not rescue_positions:
-            return rng.choice(empty_cells) if empty_cells else Position(0, 0)
+        self, grid: Grid, rescue_positions: list[Position],
+        empty_cells: list[Position], rng: random.Random,
+    ) -> tuple[Position, Robot]:
+        """Place robot near the center of the map."""
+        # Prefer center areas
+        center_cells = [
+            pos for pos in empty_cells
+            if grid.width // 4 <= pos.x <= 3 * grid.width // 4 and
+               grid.height // 4 <= pos.y <= 3 * grid.height // 4
+        ]
+        source = center_cells if len(center_cells) >= 3 else empty_cells
 
-        # Find empty cells that are close to any rescue station
-        close_cells = []
-        for pos in empty_cells:
-            min_dist = min(abs(pos.x - r.x) + abs(pos.y - r.y) for r in rescue_positions)
-            if 1 <= min_dist <= 3:
-                close_cells.append(pos)
+        pos = rng.choice(source) if source else Position(1, 1)
+        grid.set_cell(pos.x, pos.y, CellType.ROBOT)
+        return pos, Robot(position=pos, state=RobotState.IDLE)
 
-        source_list = close_cells if close_cells else empty_cells
-        return rng.choice(source_list) if source_list else Position(0, 0)
+    def _place_victims(
+        self, grid: Grid, count: int,
+        empty_cells: list[Position], rng: random.Random,
+    ) -> list[Victim]:
+        """Place victims in open areas."""
+        positions = self._select_distinct(count, empty_cells, rng)
+        victims: list[Victim] = []
+        for i, pos in enumerate(positions):
+            grid.set_cell(pos.x, pos.y, CellType.VICTIM)
+            victims.append(Victim(victim_id=i + 1, position=pos, state=VictimState.WAITING))
+        return victims
 
-    def _select_positions(
-        self, count: int, primary_list: list[Position], fallback_list: list[Position],
-        rng: random.Random
+    def _place_fire_sources(
+        self, grid: Grid, count: int,
+        empty_cells: list[Position], rng: random.Random,
+    ) -> list[FireCell]:
+        """Place fire sources away from rescue stations."""
+        positions = self._select_distinct(count, empty_cells, rng)
+        fire_cells: list[FireCell] = []
+        for pos in positions:
+            grid.set_cell(pos.x, pos.y, CellType.FIRE)
+            fire_cells.append(FireCell(position=pos, ignition_step=0))
+        return fire_cells
+
+    # ── Utility ───────────────────────────────────────────────────
+
+    def _collect_cells(
+        self, grid: Grid,
     ) -> list[Position]:
-        """Select distinct positions prioritizing primary list then fallback list."""
-        selected: list[Position] = []
+        """Collect all EMPTY cells."""
+        empty_cells: list[Position] = []
+        for y in range(grid.height):
+            for x in range(grid.width):
+                if grid.cells[y][x].cell_type == CellType.EMPTY:
+                    empty_cells.append(Position(x, y))
+        return empty_cells
 
-        # Copy lists
-        p_list = primary_list[:]
-        f_list = [pos for pos in fallback_list if pos not in primary_list]
-
-        for _ in range(count):
-            if p_list:
-                pos = rng.choice(p_list)
-                selected.append(pos)
-                p_list.remove(pos)
-            elif f_list:
-                pos = rng.choice(f_list)
-                selected.append(pos)
-                f_list.remove(pos)
-            else:
-                break
-
-        return selected
+    def _select_distinct(
+        self, count: int, pool: list[Position],
+        rng: random.Random,
+    ) -> list[Position]:
+        """Select distinct positions from pool."""
+        if len(pool) < count:
+            return list(pool)
+        return rng.sample(pool, count)
 
     def _validate_connectivity(
-        self, grid: Grid, robot_pos: Position, victims: list[Victim],
-        rescue_stations: list[RescueStation]
+        self, grid: Grid, robot_pos: Position,
+        victims: list[Victim], rescue_stations: list[RescueStation],
     ) -> bool:
-        """Perform BFS to check if victims and rescue stations are reachable from robot."""
-        visited: set[tuple[int, int]] = { (robot_pos.x, robot_pos.y) }
+        """BFS check if all key entities are reachable from robot."""
+        visited: set[tuple[int, int]] = {(robot_pos.x, robot_pos.y)}
         queue: list[Position] = [robot_pos]
         head = 0
 
-        # Run standard BFS
         while head < len(queue):
             curr = queue[head]
             head += 1
-
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nx, ny = curr.x + dx, curr.y + dy
                 if grid.in_bounds(nx, ny) and (nx, ny) not in visited:
-                    # During validation check, we can traverse anything that is not a WALL
-                    # or active initial FIRE (since robot can't traverse fire cells initially)
-                    cell_type = grid.cells[ny][nx].cell_type
-                    if cell_type != CellType.WALL and cell_type != CellType.FIRE:
+                    ct = grid.cells[ny][nx].cell_type
+                    if ct not in (CellType.WALL, CellType.FIRE):
                         visited.add((nx, ny))
                         queue.append(Position(nx, ny))
 
-        # Check if all victims are reachable
-        for v in victims:
-            if (v.x, v.y) not in visited:
-                return False
-
-        # Check if all rescue stations are reachable
-        for r in rescue_stations:
-            if (r.x, r.y) not in visited:
-                return False
-
-        return True
+        return all(
+            (v.x, v.y) in visited for v in victims
+        ) and all(
+            (r.x, r.y) in visited for r in rescue_stations
+        )
