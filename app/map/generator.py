@@ -51,7 +51,7 @@ class MapGenerator:
         Raises:
             RuntimeError: If generation fails after max attempts.
         """
-        max_attempts = 30
+        max_attempts = 150
         for attempt in range(max_attempts):
             rng = random.Random(seed + attempt if seed is not None else None)
             grid = Grid(width, height)
@@ -91,7 +91,7 @@ class MapGenerator:
             # 6. Validate connectivity
             if self._validate_connectivity(grid, robot_pos, victims, rescue_stations):
                 stats = SimulationStats()
-                return GameState(
+                candidate_state = GameState(
                     grid=grid.cells,
                     robot=robot,
                     victims=victims,
@@ -101,8 +101,41 @@ class MapGenerator:
                     current_mode=SimulationState.READY,
                     selected_algorithm="ASTAR",
                 )
+                if self._is_map_winnable(candidate_state):
+                    return candidate_state
 
-        raise RuntimeError(f"Failed to generate connected map after {max_attempts} attempts.")
+        raise RuntimeError(f"Failed to generate connected, winnable map after {max_attempts} attempts.")
+
+    def _is_map_winnable(self, state: GameState) -> bool:
+        """
+        Simulate the game using ASTAR pathfinding algorithm without GUI.
+        Return True if the simulation finishes in MISSION_COMPLETE state.
+        """
+        from app.core.engine import Engine
+        from app.core.snapshot import create_snapshot, restore_snapshot
+
+        # Create a deep-copy of the state to avoid mutating the original
+        snap = create_snapshot(state)
+        test_state = restore_snapshot(snap)
+
+        test_engine = Engine(test_state)
+        # Apply standard parameters
+        test_engine.fire_interval = 1000.0
+        test_engine.step_interval = 200.0
+
+        # Run under A*
+        test_engine.start(SimulationState.ASTAR)
+
+        # Fast-forward simulation
+        max_simulation_steps = test_state.width * test_state.height * 5
+        steps = 0
+        while test_engine.state.current_mode not in (SimulationState.MISSION_COMPLETE, SimulationState.MISSION_FAILED):
+            test_engine.update(test_engine.step_interval)
+            steps += 1
+            if steps > max_simulation_steps:
+                break
+
+        return test_engine.state.current_mode == SimulationState.MISSION_COMPLETE
 
     # ── Open Layout Generation ─────────────────────────────────────
 

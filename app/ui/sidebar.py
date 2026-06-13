@@ -11,25 +11,25 @@ import pygame
 from app.config import SimulationState, EditTool
 from app.core.state import GameState
 
-# Colors matching design standards
-COLOR_SIDEBAR_BG = (30, 30, 35)
-COLOR_SECTION_HEADER = (150, 150, 160)
-COLOR_LABEL = (200, 200, 210)
-COLOR_BTN_BG = (50, 50, 60)
-COLOR_BTN_HOVER = (70, 70, 85)
-COLOR_BTN_ACTIVE = (30, 144, 255)
+# Colors matching premium design standards
+COLOR_SIDEBAR_BG = (21, 21, 26)  # Dark metallic gray
+COLOR_SECTION_HEADER = (170, 180, 195)  # Soft light blue-gray
+COLOR_LABEL = (195, 205, 215)  # Muted gray text
+COLOR_BTN_BG = (43, 50, 68)  # Slate blue-gray
+COLOR_BTN_HOVER = (60, 72, 98)  # Bright hover gray-blue
+COLOR_BTN_ACTIVE = (0, 150, 255)  # Electric Dodger Blue active
 COLOR_BTN_TEXT = (255, 255, 255)
-COLOR_BORDER = (70, 70, 75)
-COLOR_DANGER = (220, 53, 69)
-COLOR_WARNING = (255, 193, 7)
+COLOR_BORDER = (55, 65, 82)  # Dark border line
+COLOR_DANGER = (231, 76, 60)  # Modern coral red
+COLOR_WARNING = (241, 196, 15)  # Bright amber gold
 
 # Result Banner Colors
-COLOR_COMPLETE = (46, 139, 87)
-COLOR_FAILED = (190, 40, 40)
+COLOR_COMPLETE = (46, 204, 113)  # Emerald green
+COLOR_FAILED = (231, 76, 60)  # Crimson red
 
 # Safe Font Loader
 pygame.font.init()
-FONT_TITLE = pygame.font.SysFont("segoeui", 14)
+FONT_TITLE = pygame.font.SysFont("segoeui", 12, bold=True)
 FONT_TEXT = pygame.font.SysFont("segoeui", 12)
 FONT_BOLD = pygame.font.SysFont("segoeui", 12, bold=True)
 
@@ -94,10 +94,10 @@ class Sidebar:
         interval_lbl = FONT_TEXT.render("Fire Speed (ms):", True, COLOR_LABEL)
         surface.blit(interval_lbl, (x_left, y))
         textbox = pygame.Rect(x_left + 100, y - 2, 100, 20)
-        bg = (20, 20, 25) if ui_state.fire_interval_focused else (40, 40, 45)
+        bg = (15, 15, 20) if ui_state.fire_interval_focused else (30, 30, 38)
         border = COLOR_BTN_ACTIVE if ui_state.fire_interval_focused else COLOR_BORDER
-        pygame.draw.rect(surface, bg, textbox, border_radius=3)
-        pygame.draw.rect(surface, border, textbox, 1, border_radius=3)
+        pygame.draw.rect(surface, bg, textbox, border_radius=4)
+        pygame.draw.rect(surface, border, textbox, 1, border_radius=4)
 
         txt = ui_state.fire_interval_text
         if ui_state.fire_interval_focused:
@@ -175,26 +175,26 @@ class Sidebar:
 
         mode_str = state.current_mode.value
         self._draw_status(surface, "Mode:", mode_str, y, bold=True)
-        y += 18
+        y += 22
         self._draw_status(surface, "Saved:", f"{state.saved_count} / {state.total_victims}", y)
-        y += 18
+        y += 22
         self._draw_status(surface, "Dead:", f"{state.dead_count}", y,
                           color=COLOR_DANGER if state.dead_count > 0 else (255, 255, 255))
-        y += 18
+        y += 22
         remaining = state.remaining_victims
         self._draw_status(surface, "Remaining:", f"{remaining}", y,
                           color=COLOR_WARNING if remaining > 0 else (255, 255, 255))
-        y += 18
+        y += 22
         self._draw_status(surface, "Steps:", f"{state.stats.total_steps}", y)
-        y += 18
+        y += 22
         self._draw_status(surface, "Time:", f"{state.simulation_time:.1f}s", y)
-        y += 18
+        y += 22
         self._draw_status(surface, "Replans:", f"{state.stats.replans}", y)
-        y += 18
+        y += 22
         carrying = f"V#{state.robot.carried_victim_id}" if state.robot.carrying_victim else "None"
         self._draw_status(surface, "Carrying:", carrying, y,
                           color=COLOR_BTN_ACTIVE if state.robot.carrying_victim else (255, 255, 255))
-        y += 28
+        y += 32
 
         # Mission result banner
         if state.current_mode == SimulationState.MISSION_COMPLETE:
@@ -217,8 +217,8 @@ class Sidebar:
 
         tx, ty, tw = trigger.x, trigger.y, trigger.width
         container = pygame.Rect(tx, ty + trigger.height, tw, len(options) * 20)
-        pygame.draw.rect(surface, (25, 25, 30), container)
-        pygame.draw.rect(surface, COLOR_BTN_ACTIVE, container, 1)
+        pygame.draw.rect(surface, (25, 25, 30), container, border_radius=4)
+        pygame.draw.rect(surface, COLOR_BTN_ACTIVE, container, 1, border_radius=4)
         mouse_pos = pygame.mouse.get_pos()
 
         for idx, opt in enumerate(options):
@@ -236,15 +236,19 @@ class Sidebar:
         hdr = FONT_TITLE.render(text, True, COLOR_SECTION_HEADER)
         surface.blit(hdr, (self.start_x + 15, y))
         pygame.draw.line(surface, COLOR_BORDER,
-                         (self.start_x + 15, y + 18),
-                         (self.start_x + self.width - 15, y + 18), 1)
-        return y + 26
+                         (self.start_x + 15, y + 16),
+                         (self.start_x + self.width - 15, y + 16), 1)
+        return y + 24
 
     def _draw_status(self, surface: pygame.Surface, label: str, val: str, y: int,
                      bold: bool = False, color: tuple = (255, 255, 255)) -> None:
-        """Draw a status label-value pair."""
+        """Draw a status label-value pair within a polished status bar card."""
+        rect = pygame.Rect(self.start_x + 15, y - 2, self.width - 30, 20)
+        pygame.draw.rect(surface, (28, 28, 35), rect, border_radius=4)
+        pygame.draw.rect(surface, COLOR_BORDER, rect, 1, border_radius=4)
+        
         lbl = FONT_TEXT.render(label, True, COLOR_LABEL)
-        surface.blit(lbl, (self.start_x + 15, y))
+        surface.blit(lbl, (self.start_x + 23, y))
         font = FONT_BOLD if bold else FONT_TEXT
         val_r = font.render(val, True, color)
         surface.blit(val_r, (self.start_x + 120, y))
@@ -254,9 +258,9 @@ class Sidebar:
                                 is_open: bool = False) -> pygame.Rect:
         """Draw a dropdown trigger button."""
         rect = pygame.Rect(x, y, w, h)
-        bg = (40, 40, 48) if is_open else (50, 50, 60)
-        pygame.draw.rect(surface, bg, rect, border_radius=3)
-        pygame.draw.rect(surface, COLOR_BORDER, rect, 1, border_radius=3)
+        bg = (30, 30, 38) if is_open else COLOR_BTN_BG
+        pygame.draw.rect(surface, bg, rect, border_radius=4)
+        pygame.draw.rect(surface, COLOR_BORDER, rect, 1, border_radius=4)
         txt = FONT_TEXT.render(text, True, COLOR_BTN_TEXT)
         surface.blit(txt, (x + 8, y + (h - txt.get_height()) // 2))
         return rect
@@ -275,8 +279,8 @@ class Sidebar:
         else:
             bg = COLOR_BTN_BG
 
-        pygame.draw.rect(surface, bg, rect, border_radius=3)
-        pygame.draw.rect(surface, COLOR_BORDER, rect, 1, border_radius=3)
+        pygame.draw.rect(surface, bg, rect, border_radius=6)
+        pygame.draw.rect(surface, COLOR_BORDER, rect, 1, border_radius=6)
 
         txt = FONT_TEXT.render(text, True, COLOR_BTN_TEXT)
         surface.blit(txt, (x + (w - txt.get_width()) // 2, y + (h - txt.get_height()) // 2))
@@ -286,8 +290,8 @@ class Sidebar:
                       color: tuple[int, int, int], y: int) -> None:
         """Draw a mission status banner."""
         rect = pygame.Rect(self.start_x + 15, y + 5, self.width - 30, 32)
-        pygame.draw.rect(surface, color, rect, border_radius=4)
-        pygame.draw.rect(surface, (255, 255, 255), rect, 1, border_radius=4)
+        pygame.draw.rect(surface, color, rect, border_radius=6)
+        pygame.draw.rect(surface, (255, 255, 255), rect, 1, border_radius=6)
         txt = FONT_TITLE.render(text, True, (255, 255, 255))
         surface.blit(txt, (rect.x + (rect.width - txt.get_width()) // 2,
                           rect.y + (rect.height - txt.get_height()) // 2))

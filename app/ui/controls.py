@@ -11,6 +11,7 @@ import pygame
 from app.config import (
     CellType, SimulationState, EditTool,
     UP, DOWN, LEFT, RIGHT, GRID_MIN_SIZE, GRID_MAX_SIZE,
+    VictimState, RobotState,
 )
 from app.core.state import Position, Victim, RescueStation, FireCell, GameState
 from app.map.generator import MapGenerator
@@ -45,14 +46,19 @@ def _get_cell_from_mouse(
     mx: int, my: int, grid_w: int, grid_h: int,
     grid_width_px: int = 960, grid_height_px: int = 800,
 ) -> tuple[int, int] | None:
-    """Convert mouse pixel coordinates to grid cell coordinates."""
-    cs = min(grid_width_px / grid_w, grid_height_px / grid_h) if grid_w > 0 else 1
-    ox = (grid_width_px - (grid_w * cs)) / 2
-    oy = (grid_height_px - (grid_h * cs)) / 2
-    gx = int((mx - ox) / cs)
-    gy = int((my - oy) / cs)
-    if 0 <= gx < grid_w and 0 <= gy < grid_h:
-        return gx, gy
+    """Convert mouse pixel coordinates to grid cell coordinates with correct padding offsets."""
+    padding = 35  # Match the padding in GridRenderer
+    usable_w = grid_width_px - 2 * padding
+    usable_h = grid_height_px - 2 * padding
+
+    if grid_w > 0 and grid_h > 0:
+        cs = min(usable_w / grid_w, usable_h / grid_h)
+        ox = padding + (usable_w - (grid_w * cs)) / 2
+        oy = padding + (usable_h - (grid_h * cs)) / 2
+        gx = int((mx - ox) / cs)
+        gy = int((my - oy) / cs)
+        if 0 <= gx < grid_w and 0 <= gy < grid_h:
+            return gx, gy
     return None
 
 

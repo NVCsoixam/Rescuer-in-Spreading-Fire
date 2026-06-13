@@ -386,21 +386,51 @@ class Engine:
 
     # ── Target Selection ──────────────────────────────────────────
 
+    def _get_fire_distances(self) -> dict[tuple[int, int], int]:
+        """Run a multi-source BFS from all fire cells to find the shortest distance (in steps) to each cell."""
+        fire_dists: dict[tuple[int, int], int] = {}
+        queue: list[Position] = []
+        for fc in self.state.fire_cells:
+            fire_dists[(fc.position.x, fc.position.y)] = 0
+            queue.append(fc.position)
+
+        head = 0
+        grid_obj = self._get_grid()
+        while head < len(queue):
+            curr = queue[head]
+            head += 1
+            curr_dist = fire_dists[(curr.x, curr.y)]
+
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = curr.x + dx, curr.y + dy
+                if grid_obj.in_bounds(nx, ny):
+                    if grid_obj.cells[ny][nx].cell_type != CellType.WALL:
+                        if (nx, ny) not in fire_dists:
+                            fire_dists[(nx, ny)] = curr_dist + 1
+                            queue.append(Position(nx, ny))
+        return fire_dists
+
     def select_target(self) -> Position | None:
         """
         Determine the next target position based on robot state (carrying vs seeking).
 
-        Uses heuristic scoring: cost first, then risk, then entity ID for tie-breaking.
+        If seeking and no salvageable victim remains, plans a path back to a rescue station.
 
         Returns:
-            Position | None: Target position or None if no valid target remains.
+            Position | None: Target position or None if no valid target/exit remains.
         """
         if self.state.robot.carrying_victim:
             return self._select_rescue_station_target()
-        return self._select_victim_target()
+        
+        victim_target = self._select_victim_target()
+        if victim_target is not None:
+            return victim_target
+            
+        # Exit strategy: no salvageable victims left, return to exit
+        return self._select_rescue_station_target()
 
     def _select_rescue_station_target(self) -> Position | None:
-        """Select closest rescue station when carrying a victim."""
+        """Select closest rescue station when carrying a victim or returning to exit."""
         candidates: list[tuple[float, int, Position]] = []
         for station in self.state.rescue_stations:
             path_res = self._find_path_to(station.position)
@@ -413,25 +443,42 @@ class Engine:
         return candidates[0][2]
 
     def _select_victim_target(self) -> Position | None:
-        """Select closest, least risky victim to rescue."""
-        candidates: list[tuple[float, float, int, Position]] = []
+        """Select closest, salvageable victim prioritizing those closest to fire."""
+        fire_dists = self._get_fire_distances()
+        if self.step_interval == 0.0:
+            speed_ratio = 999999.0
+        else:
+            speed_ratio = self.fire_interval / self.step_interval
+
+        candidates: list[tuple[float, float, float, int, Position]] = []
         for victim in self.state.victims:
             if victim.is_active():
                 path_res = self._find_path_to(victim.position)
                 if path_res.found:
-                    # Calculate risk sum along the path
-                    risk_sum = sum(
-                        self.state.grid[p.y][p.x].risk for p in path_res.path
-                    )
-                    candidates.append(
-                        (path_res.cost, risk_sum, victim.victim_id, victim.position)
-                    )
+                    steps_to = len(path_res.path)
+                    fire_dist = fire_dists.get((victim.x, victim.y), 999999)
+                    steps_survival = fire_dist * speed_ratio
+
+                    # Can the robot reach the victim before fire does?
+                    if steps_to < steps_survival:
+                        # Calculate risk sum along the path
+                        risk_sum = sum(
+                            self.state.grid[p.y][p.x].risk for p in path_res.path
+                        )
+                        # Sorting criteria:
+                        # 1. steps_survival asc (closer to dying first)
+                        # 2. steps_to asc (closer to robot next)
+                        # 3. risk_sum asc
+                        # 4. victim_id asc (tie-breaker)
+                        candidates.append(
+                            (steps_survival, steps_to, risk_sum, victim.victim_id, victim.position)
+                        )
 
         if not candidates:
             return None
-        # Sort: cost ascending, risk_sum ascending, victim_id ascending
-        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
-        return candidates[0][3]
+        # Sort by: steps_survival, steps_to, risk_sum, victim_id
+        candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        return candidates[0][4]
 
     # ── Pathfinding ───────────────────────────────────────────────
 
@@ -508,11 +555,9 @@ class Engine:
             logger.info("Mission Terminated: Robot burned.")
             return
 
-        # 2. Check if any waiting victims remain
+        # 2. Check if all victims are processed (no waiting and no carrying)
         waiting_count = state.remaining_victims
-
         if waiting_count == 0 and not state.robot.carrying_victim:
-            # All victims processed - determine success/failure
             if state.saved_count > 0:
                 state.current_mode = SimulationState.MISSION_COMPLETE
                 logger.info(
@@ -523,10 +568,25 @@ class Engine:
                 logger.info("Mission Failed: No victims were saved.")
             return
 
-        # 3. Check unreachable targets during AI execution
+        # 3. Check exit status and target accessibility during AI execution
         if state.current_mode != SimulationState.USER_MODE:
+            is_at_station = any(rs.position == state.robot.position for rs in state.rescue_stations)
+            no_salvageable_victims = (self._select_victim_target() is None)
+
+            # If robot is at station, no salvageable victims exist, and not carrying
+            if is_at_station and no_salvageable_victims and not state.robot.carrying_victim:
+                if state.saved_count > 0:
+                    state.current_mode = SimulationState.MISSION_COMPLETE
+                    logger.info(
+                        f"Mission Complete! Robot returned to exit. Saved {state.saved_count}/{state.total_victims} victims."
+                    )
+                else:
+                    state.current_mode = SimulationState.MISSION_FAILED
+                    logger.info("Mission Failed: Robot returned to exit but saved 0 victims.")
+                return
+
+            # If no target can be selected (neither a victim to save nor an exit to return to)
             target = self.select_target()
             if target is None:
-                # There are remaining targets, but none are reachable
                 state.current_mode = SimulationState.MISSION_FAILED
-                logger.info("Mission Failed: Remaining targets are unreachable.")
+                logger.info("Mission Failed: Robot is trapped with no reachable targets or exits.")
