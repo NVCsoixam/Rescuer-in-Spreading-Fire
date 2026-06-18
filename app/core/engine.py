@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from app.config import CellType, SimulationState, RobotState, VictimState, FIRE_INTERVAL_DEFAULT
-from app.core.state import Position, GameState, PathResult
+from app.core.state import Position, GameState, PathResult, MissionSummary
 from app.map.grid import Grid
 from app.core.snapshot import create_snapshot, restore_snapshot
 from app.logic.movement import validate_and_move
@@ -176,6 +176,7 @@ class Engine:
     def reset(self) -> None:
         """Reset the simulation back to its initial snapshot state."""
         if self.snapshot is not None:
+            saved_history = self.state.history.copy()
             restored = restore_snapshot(self.snapshot)
 
             # In-place copy to preserve references
@@ -187,6 +188,7 @@ class Engine:
             self.state.stats = restored.stats
             self.state.current_mode = restored.current_mode
             self.state.selected_algorithm = restored.selected_algorithm
+            self.state.history = saved_history
 
             # Clear all cached state
             self._invalidate_caches()
@@ -548,12 +550,32 @@ class Engine:
 
     # ── Mission Completion Checks ─────────────────────────────────
 
+    def _log_history(self, success: bool) -> None:
+        """Helper to create and append a MissionSummary before transitioning to complete/failed."""
+        if self.state.current_mode in (SimulationState.MISSION_COMPLETE, SimulationState.MISSION_FAILED):
+            return
+
+        algo = self.state.selected_algorithm if self.state.current_mode != SimulationState.USER_MODE else "USER_MODE"
+        
+        summary = MissionSummary(
+            success=success,
+            saved=self.state.saved_count,
+            dead=self.state.dead_count,
+            steps=self.state.stats.total_steps,
+            simulation_time=self.state.stats.simulation_time,
+            algorithm=algo,
+            expanded_nodes=self.state.stats.expanded_nodes,
+            computation_time_ms=self.state.stats.computation_time_ms
+        )
+        self.state.history.append(summary)
+
     def _check_mission_completion(self) -> None:
         """Evaluate if the mission has reached a terminal success or failure state."""
         state = self.state
 
         # 1. Failure: Robot is dead
         if not state.robot.alive:
+            self._log_history(False)
             state.current_mode = SimulationState.MISSION_FAILED
             logger.info("Mission Terminated: Robot burned.")
             return
@@ -562,11 +584,13 @@ class Engine:
         waiting_count = state.remaining_victims
         if waiting_count == 0 and not state.robot.carrying_victim:
             if state.saved_count > 0:
+                self._log_history(True)
                 state.current_mode = SimulationState.MISSION_COMPLETE
                 logger.info(
                     f"Mission Complete! Saved {state.saved_count}/{state.total_victims} victims."
                 )
             else:
+                self._log_history(False)
                 state.current_mode = SimulationState.MISSION_FAILED
                 logger.info("Mission Failed: No victims were saved.")
             return
@@ -579,11 +603,13 @@ class Engine:
             # If robot is at station, no salvageable victims exist, and not carrying
             if is_at_station and no_salvageable_victims and not state.robot.carrying_victim:
                 if state.saved_count > 0:
+                    self._log_history(True)
                     state.current_mode = SimulationState.MISSION_COMPLETE
                     logger.info(
                         f"Mission Complete! Robot returned to exit. Saved {state.saved_count}/{state.total_victims} victims."
                     )
                 else:
+                    self._log_history(False)
                     state.current_mode = SimulationState.MISSION_FAILED
                     logger.info("Mission Failed: Robot returned to exit but saved 0 victims.")
                 return
@@ -591,5 +617,6 @@ class Engine:
             # If no target can be selected (neither a victim to save nor an exit to return to)
             target = self.select_target()
             if target is None:
+                self._log_history(False)
                 state.current_mode = SimulationState.MISSION_FAILED
                 logger.info("Mission Failed: Robot is trapped with no reachable targets or exits.")

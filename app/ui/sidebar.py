@@ -166,6 +166,9 @@ class Sidebar:
         btn_reset = self._draw_btn(surface, "RESET", x_right, y, w_half, 28)
         self.buttons["control_pause"] = btn_pause
         self.buttons["control_reset"] = btn_reset
+        y += 35
+        btn_history = self._draw_btn(surface, "VIEW HISTORY", x_left, y, w_full, 28)
+        self.buttons["control_history"] = btn_history
         y += 40
 
         # ==========================================
@@ -299,3 +302,77 @@ class Sidebar:
         txt = FONT_TITLE.render(text, True, (255, 255, 255))
         surface.blit(txt, (rect.x + (rect.width - txt.get_width()) // 2,
                           rect.y + (rect.height - txt.get_height()) // 2))
+
+    def draw_history_overlay(self, surface: pygame.Surface, state: GameState, ui_state) -> None:
+        """Draw the mission history modal overlay in the center of the grid area."""
+        if not ui_state.history_open:
+            return
+
+        # Dim the background grid area slightly
+        overlay = pygame.Surface((self.start_x, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+
+        # Modal container
+        m_w, m_h = 700, 500
+        m_x = (self.start_x - m_w) // 2
+        m_y = (self.height - m_h) // 2
+
+        modal_rect = pygame.Rect(m_x, m_y, m_w, m_h)
+        pygame.draw.rect(surface, (25, 30, 40), modal_rect, border_radius=12)
+        pygame.draw.rect(surface, (60, 70, 90), modal_rect, 2, border_radius=12)
+
+        # Title
+        title_txt = FONT_TITLE.render("MISSION HISTORY", True, (255, 255, 255))
+        surface.blit(title_txt, (m_x + 20, m_y + 20))
+        pygame.draw.line(surface, COLOR_BORDER, (m_x + 20, m_y + 40), (m_x + m_w - 20, m_y + 40), 1)
+
+        # Column headers
+        headers = [
+            ("No.", 20), ("Status", 60), ("Algorithm", 140), 
+            ("Saved", 240), ("Dead", 300), ("Steps", 360), 
+            ("Time", 420), ("States Gen", 500), ("Comp. Time", 600)
+        ]
+        
+        for name, offset in headers:
+            hdr_txt = FONT_BOLD.render(name, True, COLOR_SECTION_HEADER)
+            surface.blit(hdr_txt, (m_x + offset, m_y + 55))
+
+        pygame.draw.line(surface, COLOR_BORDER, (m_x + 20, m_y + 75), (m_x + m_w - 20, m_y + 75), 1)
+
+        # Draw history entries (last 15 max)
+        y_offset = m_y + 85
+        history_to_show = state.history[-15:] if len(state.history) > 15 else state.history
+
+        for i, entry in enumerate(reversed(history_to_show)):
+            run_idx = len(state.history) - i
+            
+            # Status color
+            status_color = COLOR_COMPLETE if entry.success else COLOR_FAILED
+            status_text = "SUCCESS" if entry.success else "FAILED"
+
+            row_data = [
+                (f"#{run_idx}", 20, COLOR_LABEL),
+                (status_text, 60, status_color),
+                (entry.algorithm, 140, (255, 255, 255)),
+                (f"{entry.saved}", 240, COLOR_COMPLETE if entry.saved > 0 else COLOR_LABEL),
+                (f"{entry.dead}", 300, COLOR_DANGER if entry.dead > 0 else COLOR_LABEL),
+                (f"{entry.steps}", 360, COLOR_LABEL),
+                (f"{entry.simulation_time:.1f}s", 420, COLOR_LABEL),
+                (f"{entry.expanded_nodes}", 500, COLOR_LABEL),
+                (f"{entry.computation_time_ms:.1f}ms", 600, COLOR_LABEL)
+            ]
+
+            for text, offset, color in row_data:
+                txt_render = FONT_TEXT.render(text, True, color)
+                surface.blit(txt_render, (m_x + offset, y_offset))
+            
+            y_offset += 25
+
+        if not state.history:
+            empty_txt = FONT_TEXT.render("No mission history available.", True, COLOR_LABEL)
+            surface.blit(empty_txt, (m_x + m_w//2 - empty_txt.get_width()//2, m_y + m_h//2))
+
+        # Close instruction
+        close_txt = FONT_TEXT.render("Click anywhere outside to close", True, COLOR_LABEL)
+        surface.blit(close_txt, (m_x + m_w//2 - close_txt.get_width()//2, m_y + m_h - 30))

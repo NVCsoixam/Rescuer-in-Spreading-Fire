@@ -29,6 +29,7 @@ class UIState:
         self.fire_interval_focused: bool = False
         self.fire_interval_text: str = "1000"
         self.show_path: bool = True  # Always show path (can't toggle via UI anymore)
+        self.history_open: bool = False
 
 
 def _apply_fire_interval(engine: Engine, ui_state: UIState) -> None:
@@ -123,6 +124,12 @@ def handle_events(
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = event.pos
+
+            if ui_state.history_open:
+                btn = sidebar.buttons.get("control_history")
+                if not (btn and btn.collidepoint(event.pos)):
+                    ui_state.history_open = False
+                    continue # Consume click
 
             # Click in Grid Area
             if mx < 960:
@@ -248,6 +255,12 @@ def _handle_sidebar_click(
             ui_state.fire_interval_focused = False
             _apply_fire_interval(engine, ui_state)
             engine.reset()
+            
+        elif name == "control_history":
+            ui_state.size_dropdown_open = False
+            ui_state.fire_interval_focused = False
+            _apply_fire_interval(engine, ui_state)
+            ui_state.history_open = not ui_state.history_open
 
     # Unfocus input if clicked outside
     if ui_state.fire_interval_focused and not clicked_input:

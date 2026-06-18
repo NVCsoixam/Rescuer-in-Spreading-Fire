@@ -201,6 +201,8 @@ class MissionSummary:
     steps: int
     simulation_time: float
     algorithm: str
+    expanded_nodes: int = 0
+    computation_time_ms: float = 0.0
 
 
 @dataclass
@@ -214,6 +216,7 @@ class GameState:
     stats: SimulationStats
     current_mode: SimulationState
     selected_algorithm: str
+    history: list[MissionSummary] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate essential game state components."""

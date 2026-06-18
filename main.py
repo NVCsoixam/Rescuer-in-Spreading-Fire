@@ -81,6 +81,9 @@ def main() -> None:
             ui_state
         )
 
+        # Draw history modal overlay if opened
+        sidebar.draw_history_overlay(screen, engine.state, ui_state)
+
         # Flip Pygame buffers to update screen pixels
         pygame.display.flip()
 
