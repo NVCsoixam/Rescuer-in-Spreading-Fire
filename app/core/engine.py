@@ -513,6 +513,9 @@ class Engine:
 
         result = pathfinder(grid_obj, robot_pos, goal, heatmap)
 
+        self.state.stats.computation_time_ms += result.execution_time_ms
+        self.state.stats.expanded_nodes += result.expanded_nodes
+
         # Cache the result
         self._path_cache = _PathCacheEntry(
             goal=goal,

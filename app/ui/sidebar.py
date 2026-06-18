@@ -191,6 +191,10 @@ class Sidebar:
         y += 22
         self._draw_status(surface, "Replans:", f"{state.stats.replans}", y)
         y += 22
+        self._draw_status(surface, "States Gen:", f"{state.stats.expanded_nodes}", y)
+        y += 22
+        self._draw_status(surface, "Comp. Time:", f"{state.stats.computation_time_ms:.1f}ms", y)
+        y += 22
         carrying = f"V#{state.robot.carried_victim_id}" if state.robot.carrying_victim else "None"
         self._draw_status(surface, "Carrying:", carrying, y,
                           color=COLOR_BTN_ACTIVE if state.robot.carrying_victim else (255, 255, 255))

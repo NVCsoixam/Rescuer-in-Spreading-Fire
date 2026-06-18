@@ -177,6 +177,8 @@ class SimulationStats:
     victims_dead: int = 0
     replans: int = 0
     fire_spread_events: int = 0
+    expanded_nodes: int = 0
+    computation_time_ms: float = 0.0
 
     def reset(self) -> None:
         """Reset all statistics to zero."""
@@ -186,6 +188,8 @@ class SimulationStats:
         self.victims_dead = 0
         self.replans = 0
         self.fire_spread_events = 0
+        self.expanded_nodes = 0
+        self.computation_time_ms = 0.0
 
 
 @dataclass
