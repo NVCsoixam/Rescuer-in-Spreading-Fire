@@ -203,6 +203,10 @@ class MissionSummary:
     algorithm: str
     expanded_nodes: int = 0
     computation_time_ms: float = 0.0
+    map_seed: int = 0
+    map_size: str = "?x?"
+    map_edited: bool = False
+
 
 
 @dataclass
@@ -217,6 +221,9 @@ class GameState:
     current_mode: SimulationState
     selected_algorithm: str
     history: list[MissionSummary] = field(default_factory=list)
+    map_seed: int = 0
+    map_size: str = "20x20"
+    map_edited: bool = False  # True neu user da chinh sua map bang Editor Mode
 
     def __post_init__(self) -> None:
         """Validate essential game state components."""

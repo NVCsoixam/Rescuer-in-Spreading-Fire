@@ -314,7 +314,7 @@ class Sidebar:
         surface.blit(overlay, (0, 0))
 
         # Modal container
-        m_w, m_h = 700, 500
+        m_w, m_h = 820, 500
         m_x = (self.start_x - m_w) // 2
         m_y = (self.height - m_h) // 2
 
@@ -329,9 +329,16 @@ class Sidebar:
 
         # Column headers
         headers = [
-            ("No.", 20), ("Status", 60), ("Algorithm", 140), 
-            ("Saved", 240), ("Dead", 300), ("Steps", 360), 
-            ("Time", 420), ("States Gen", 500), ("Comp. Time", 600)
+            ("No.",        20),
+            ("Status",     55),
+            ("Algorithm", 130),
+            ("Map",        230),
+            ("Saved",      330),
+            ("Dead",       385),
+            ("Steps",      440),
+            ("Time",       505),
+            ("States",     570),
+            ("Comp.ms",    650),
         ]
         
         for name, offset in headers:
@@ -351,16 +358,24 @@ class Sidebar:
             status_color = COLOR_COMPLETE if entry.success else COLOR_FAILED
             status_text = "SUCCESS" if entry.success else "FAILED"
 
+            if entry.map_edited:
+                map_label = f"{entry.map_size} (edited)"
+                map_color = COLOR_WARNING  # Amber: canh bao map da bi chinh sua
+            else:
+                map_label = f"{entry.map_size} #{entry.map_seed}"
+                map_color = (180, 195, 220)  # Light blue-gray: map goc
+
             row_data = [
-                (f"#{run_idx}", 20, COLOR_LABEL),
-                (status_text, 60, status_color),
-                (entry.algorithm, 140, (255, 255, 255)),
-                (f"{entry.saved}", 240, COLOR_COMPLETE if entry.saved > 0 else COLOR_LABEL),
-                (f"{entry.dead}", 300, COLOR_DANGER if entry.dead > 0 else COLOR_LABEL),
-                (f"{entry.steps}", 360, COLOR_LABEL),
-                (f"{entry.simulation_time:.1f}s", 420, COLOR_LABEL),
-                (f"{entry.expanded_nodes}", 500, COLOR_LABEL),
-                (f"{entry.computation_time_ms:.1f}ms", 600, COLOR_LABEL)
+                (f"#{run_idx}",              20,  COLOR_LABEL),
+                (status_text,                55,  status_color),
+                (entry.algorithm,           130,  (255, 255, 255)),
+                (map_label,                 230,  map_color),
+                (f"{entry.saved}",          330,  COLOR_COMPLETE if entry.saved > 0 else COLOR_LABEL),
+                (f"{entry.dead}",           385,  COLOR_DANGER if entry.dead > 0 else COLOR_LABEL),
+                (f"{entry.steps}",          440,  COLOR_LABEL),
+                (f"{entry.simulation_time:.1f}s", 505, COLOR_LABEL),
+                (f"{entry.expanded_nodes}", 570,  COLOR_LABEL),
+                (f"{entry.computation_time_ms:.1f}ms", 650, COLOR_LABEL),
             ]
 
             for text, offset, color in row_data:

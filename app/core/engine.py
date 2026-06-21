@@ -189,6 +189,10 @@ class Engine:
             self.state.current_mode = restored.current_mode
             self.state.selected_algorithm = restored.selected_algorithm
             self.state.history = saved_history
+            # Preserve map metadata so history entries show correct map info
+            self.state.map_seed = restored.map_seed
+            self.state.map_size = restored.map_size
+            self.state.map_edited = restored.map_edited
 
             # Clear all cached state
             self._invalidate_caches()
@@ -555,8 +559,13 @@ class Engine:
         if self.state.current_mode in (SimulationState.MISSION_COMPLETE, SimulationState.MISSION_FAILED):
             return
 
-        algo = self.state.selected_algorithm if self.state.current_mode != SimulationState.USER_MODE else "USER_MODE"
-        
+        if self.state.current_mode == SimulationState.USER_MODE:
+            algo = "USER_MODE"
+        elif self.state.current_mode in PATHFINDERS:
+            algo = self.state.current_mode.value  # BFS, DFS, UCS, DIJKSTRA, GREEDY, ASTAR
+        else:
+            algo = self.state.selected_algorithm
+
         summary = MissionSummary(
             success=success,
             saved=self.state.saved_count,
@@ -565,7 +574,10 @@ class Engine:
             simulation_time=self.state.stats.simulation_time,
             algorithm=algo,
             expanded_nodes=self.state.stats.expanded_nodes,
-            computation_time_ms=self.state.stats.computation_time_ms
+            computation_time_ms=self.state.stats.computation_time_ms,
+            map_seed=self.state.map_seed,
+            map_size=self.state.map_size,
+            map_edited=self.state.map_edited,
         )
         self.state.history.append(summary)
 

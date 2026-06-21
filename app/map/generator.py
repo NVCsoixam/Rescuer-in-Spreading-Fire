@@ -91,6 +91,7 @@ class MapGenerator:
             # 6. Validate connectivity
             if self._validate_connectivity(grid, robot_pos, victims, rescue_stations):
                 stats = SimulationStats()
+                actual_seed = seed + attempt if seed is not None else 0
                 candidate_state = GameState(
                     grid=grid.cells,
                     robot=robot,
@@ -100,9 +101,12 @@ class MapGenerator:
                     stats=stats,
                     current_mode=SimulationState.READY,
                     selected_algorithm="ASTAR",
+                    map_seed=actual_seed,
+                    map_size=f"{width}x{height}",
                 )
                 if self._is_map_winnable(candidate_state):
                     return candidate_state
+
 
         raise RuntimeError(f"Failed to generate connected, winnable map after {max_attempts} attempts.")
 

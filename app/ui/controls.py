@@ -271,6 +271,8 @@ def _handle_sidebar_click(
 def _apply_tool(state: GameState, x: int, y: int, tool: EditTool) -> None:
     """Modify coordinates and lists depending on selected Editor Mode tools."""
     target_pos = Position(x, y)
+    # Mark map as manually edited so History can flag it
+    state.map_edited = True
 
     # 1. Erase
     if tool == EditTool.ERASE:
